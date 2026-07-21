@@ -1,6 +1,6 @@
 # zetamac-py
 
-A terminal clone of [Zetamac](https://arithmetic.zetamac.com/), the timed mental-math arithmetic practice trainer, built with [Textual](https://github.com/Textualize/textual).
+A terminal clone of [Zetamac](https://arithmetic.zetamac.com/), the timed mental-math arithmetic practice/quant trainer, built with [Textual](https://github.com/Textualize/textual).
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Textual](https://img.shields.io/badge/built%20with-Textual-magenta)
