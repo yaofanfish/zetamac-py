@@ -1,131 +1,101 @@
-# Introduction
+# zetamac-py
 
-This is really an ongoing project so although the core features should all work, there will be some ongoing dev. 
+A terminal clone of [Zetamac](https://arithmetic.zetamac.com/), the timed mental-math arithmetic practice trainer, built with [Textual](https://github.com/Textualize/textual).
 
-# zetamac-cxx
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Textual](https://img.shields.io/badge/built%20with-Textual-magenta)
+![License](https://img.shields.io/badge/license-GPLv3-green)
 
-A terminal-first mental arithmetic trainer inspired by Zetamac, written in modern C++ with Lua scripting support.
+## Screenshots
+![Settings](assets/63dd43f7-3f04-4e29-a218-b13fdf09415e.png)
+![Play](assets/16c844ea-70ce-4e1a-9d76-011f095fc959.png)
 
-Unlike most arithmetic trainers, **zetamac-cxx is highly scriptable**. Problem generation, presets, analytics, and custom practice modes can all be extended in Lua without recompiling the program.
+## Overview
+
+zetamac-py provides the core Zetamac gameplay loop in a terminal user interface, with local run history and replay functionality:
+
+- Runs are stored locally in a SQLite database
+- Replay mode allows stepping through the problems from any past run
+- Replay Hardest re-runs the personally hardest questions (took the longest), allowing for targetted improvement
+- Per-run analytics show which operations and problems took longest
+- Number ranges and enabled operations are configurable without query strings
 
 ## Features
 
-* ➕ Addition, subtraction, multiplication and division
-* ⏱️ Timed games
-* 🧠 Flash Anzan mode
-* 📈 Replay previous runs
-* 📊 Per-question analytics
-* 💾 SQLite-backed score history
-* 📝 Embedded Lua console
-* 🔧 Fully scriptable problem generation
-* 🖥️ Terminal interface with an experimental Qt GUI
+- Timed rounds with configurable duration
+- Addition, subtraction, multiplication, and division, individually toggleable
+- Independently configurable number ranges for addition and multiplication problems
+- Every run logged to a local SQLite database with per-problem timing
+- Replay of any past run problem-by-problem, or direct replay of the hardest run
+- Post-round and post-replay summaries with per-problem breakdown
+- Keyboard-driven navigation (arrow keys / j-k, Enter to select, Esc/q to quit a round)
+- Runs anywhere Python and a terminal are available; no browser required
 
-## Lua Scripting
+## Installation
 
-One of the main goals of this project is making custom practice sessions easy.
+Requires Python 3.10+.
 
-For example:
-
-```lua
-tt({7}, {6,7,8})
-```
-in the lua shell
-
-practises only the 7 times table against 6, 7 and 8.
-
-Presets can also be defined entirely in Lua:
-
-```lua
-function pre1()
-    settings.operations = {"*"}
-    settings.multiplication_bounds = {2, 12, 13, 19}
-end
+```bash
+git clone https://github.com/yaofanfish/zetamac-py.git
+cd zetamac-py
+pip install -e .
 ```
 
-The generator itself is implemented in Lua, allowing new question types or completely different game modes to be added without touching the C++ code.
+Or install directly with `pip`:
 
-## Replay & Analytics
+```bash
+pip install zetamac-py
+```
 
-Every standard run is stored in SQLite.
+*(Once published to PyPI — see [Roadmap](#roadmap).)*
 
-You can:
+## Usage
 
-* replay previous sessions
-* compare replay speed against the original
-* view fastest and slowest questions
-* inspect average and median solve times
-* access run data directly from Lua
+Launch the app:
+
+```bash
+zetamac-py
+```
+
+From the main menu:
+
+| Item | Description |
+|---|---|
+| **Settings** | Enable/disable operations, set number ranges, set round duration |
+| **Play** | Start a timed round |
+| **Replay** | Browse recent runs and replay one problem-by-problem |
+| **Replay Hardest** | Replay the highest-scoring run |
+| **View Runs** | Browse run history and inspect raw run data |
+| **Quit** | Exit the app |
+
+During a round, type an answer and press Enter; correct answers advance to the next problem automatically. Press `q` or `Esc` at any time to end the round early.
 
 ## Configuration
 
-User configuration lives in:
-
-```text
-~/.config/zetamac-cxx/luarc.lua
-```
-
-This file is loaded automatically on startup and can define:
-
-* presets
-* helper functions
-* custom generators
-* practice commands
-* overrides for operand generation
-
-## Dependencies
-
-* C++20 compiler
-* Lua 5.4
-* sol2
-* SQLite3
-* SQLiteCpp
-* nlohmann/json
-* Qt (optional GUI)
-
-## Building
-
-```bash
-git clone https://github.com/<your-username>/zetamac-cxx.git
-cd zetamac-cxx
-make
-```
-
-(or use your preferred build system if different.)
+Settings are stored at `~/.config/zetamac-py/settings.json` and can be edited through the in-app Settings screen or by hand. Run history is stored in a SQLite database at `~/.local/share/zetamac-py/runs.db`.
 
 ## Roadmap
 
-* Better Qt interface
-* More statistics and visualisations
-* Additional training modes
-* Better scripting API
-* Plugin ecosystem
+- [ ] Publish to PyPI
+- [ ] Configurable keybindings
 
-## Example
+Contributions toward any of the above, or other proposals, are welcome — see below.
 
+## Contributing
+
+Issues and pull requests are welcome. 
+
+```bash
+git clone https://github.com/yaofanfish/zetamac-py.git
+cd zetamac-py
+pip install -e ".[dev,opt]"
 ```
-37 * 18 =
-666
-correct!
-
-29 + 64 =
-93
-correct!
-
-Score: 72
-```
-
-## Motivation
-
-I wanted an arithmetic trainer that was both fast and hackable.
-
-Most existing trainers have fixed question generators and limited customisation. This project instead exposes almost everything through Lua, making it easy to create specialised drills, experiment with new ideas, and analyse performance afterwards.
 
 ## License
 
-MIT License.
+[GPL-v3](LICENSE)
 
-# Additional info
+## Acknowledgments
 
-
-
-
+- Inspired by [Zetamac](https://arithmetic.zetamac.com/) by Zach Wissner-Gross
+- Built with [Textual](https://github.com/Textualize/textual) and [Rich](https://github.com/Textualize/rich)
