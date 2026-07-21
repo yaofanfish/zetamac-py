@@ -1,0 +1,99 @@
+<h1>zetamac-py</h1>
+<p>A terminal clone of <a href="https://arithmetic.zetamac.com/">Zetamac</a>, the timed mental-math arithmetic trainer, built with <a href="https://github.com/Textualize/textual">Textual</a>.</p>
+<p><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python" />
+<img src="https://img.shields.io/badge/built%20with-Textual-magenta" alt="Textual" />
+<img src="https://img.shields.io/badge/license-GPLv3-green" alt="License" /></p>
+<h2>Screenshots</h2>
+<p><img src="assets/63dd43f7-3f04-4e29-a218-b13fdf09415e.png" alt="Settings" />
+<img src="assets/16c844ea-70ce-4e1a-9d76-011f095fc959.png" alt="Play" /></p>
+<h2>Overview</h2>
+<p>zetamac-py provides the core Zetamac gameplay loop in a terminal user interface, with local run history and replay functionality:</p>
+<ul>
+<li>Runs are stored locally in a SQLite database</li>
+<li>Replay mode allows stepping through the problems from any past run</li>
+<li>Replay Hardest re-runs the personally hardest questions (took the longest), allowing for targetted improvement</li>
+<li>Per-run analytics show which operations and problems took longest</li>
+<li>Number ranges and enabled operations are configurable without query strings</li>
+</ul>
+<h2>Features</h2>
+<ul>
+<li>Timed rounds with configurable duration</li>
+<li>Addition, subtraction, multiplication, and division, individually toggleable</li>
+<li>Independently configurable number ranges for addition and multiplication problems</li>
+<li>Every run logged to a local SQLite database with per-problem timing</li>
+<li>Replay of any past run problem-by-problem, or direct replay of the hardest run</li>
+<li>Post-round and post-replay summaries with per-problem breakdown</li>
+<li>Keyboard-driven navigation (arrow keys / j-k, Enter to select, Esc/q to quit a round)</li>
+<li>Runs anywhere Python and a terminal are available; no browser required</li>
+</ul>
+<h2>Installation</h2>
+<p>Requires Python 3.10+.</p>
+<pre><code class="language-bash">git clone https://github.com/yaofanfish/zetamac-py.git
+cd zetamac-py
+pip install -e .
+</code></pre>
+<p>Or install directly with <code>pip</code>:</p>
+<pre><code class="language-bash">pip install zetamac-py
+</code></pre>
+<p><em>(Once published to PyPI — see <a href="#roadmap">Roadmap</a>.)</em></p>
+<h2>Usage</h2>
+<p>Launch the app:</p>
+<pre><code class="language-bash">zetamac-py
+</code></pre>
+<p>From the main menu:</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Settings</strong></td>
+<td>Enable/disable operations, set number ranges, set round duration</td>
+</tr>
+<tr>
+<td><strong>Play</strong></td>
+<td>Start a timed round</td>
+</tr>
+<tr>
+<td><strong>Replay</strong></td>
+<td>Browse recent runs and replay one problem-by-problem</td>
+</tr>
+<tr>
+<td><strong>Replay Hardest</strong></td>
+<td>Replay the highest-scoring run</td>
+</tr>
+<tr>
+<td><strong>View Runs</strong></td>
+<td>Browse run history and inspect raw run data</td>
+</tr>
+<tr>
+<td><strong>Quit</strong></td>
+<td>Exit the app</td>
+</tr>
+</tbody>
+</table>
+<p>During a round, type an answer and press Enter; correct answers advance to the next problem automatically. Press <code>q</code> or <code>Esc</code> at any time to end the round early.</p>
+<h2>Configuration</h2>
+<p>Settings are stored at <code>~/.config/zetamac-py/settings.json</code> and can be edited through the in-app Settings screen or by hand. Run history is stored in a SQLite database at <code>~/.local/share/zetamac-py/runs.db</code>.</p>
+<h2>Roadmap</h2>
+<ul>
+<li><input type="checkbox" disabled="" /> Publish to PyPI</li>
+<li><input type="checkbox" disabled="" /> Configurable keybindings</li>
+</ul>
+<p>Contributions toward any of the above, or other proposals, are welcome — see below.</p>
+<h2>Contributing</h2>
+<p>Issues and pull requests are welcome.</p>
+<pre><code class="language-bash">git clone https://github.com/yaofanfish/zetamac-py.git
+cd zetamac-py
+pip install -e &quot;.[dev]&quot;
+</code></pre>
+<h2>License</h2>
+<p><a href="LICENSE">GPL-v3</a></p>
+<h2>Acknowledgments</h2>
+<ul>
+<li>Inspired by <a href="https://arithmetic.zetamac.com/">Zetamac</a> by Zach Wissner-Gross</li>
+<li>Built with <a href="https://github.com/Textualize/textual">Textual</a> and <a href="https://github.com/Textualize/rich">Rich</a></li>
+</ul>
