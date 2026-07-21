@@ -9,7 +9,7 @@ import sqlite3
 import sys, os, subprocess
 import time
 import datetime
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict
 
@@ -24,7 +24,7 @@ import code, inspect
 
 import runpy
 
-import rich, rich.console
+import rich, rich.console, rich.text
 
 import asyncio
 
@@ -34,11 +34,10 @@ sys.path.append(str(Path(__file__).parent.resolve()))
 
 console = rich.console.Console()
 
-
-
 import zetamac_py_doc
-import userfuncs
-from userfuncs import *
+import presets
+from presets import DEFAULT_SETTINGS
+
 
 
 # NOTE: data_anlysis.py
@@ -119,6 +118,75 @@ def _analytics_summary_(json_str, id: Any = None) -> dict:
     
     return summary
 
+def ids_info(conn=None):
+    if conn is None:
+        conn = globals()["conn"]
+    ret = {}
+
+    today_prefix = datetime.datetime.now().strftime("%Y%m%d")
+
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id, ts FROM runs ORDER BY id ASC")
+    for row in cursor:
+        run_id, ts = row
+        if ts:
+            run_date = str(ts)[:8]
+            if run_date == today_prefix:
+                ret["first_today_id"] = run_id
+                break
+
+    cursor.execute("SELECT MAX(id) AS max_id FROM runs")
+    row = cursor.fetchone()
+    if row and row[0] is not None:
+        ret["first_today_id"] = ret.get("first_today_id", row[0] + 1)
+        ret["highest_id"] = row[0]
+
+    ret["first_today_id"] = ret.get("first_today_id", 1)
+    ret["highest_id"] = ret.get("highest_id", 0)
+
+    return ret
+
+
+def run_avg(conn=None):
+    if conn is None:
+        conn = globals()["conn"]
+    cursor = conn.cursor()
+    cursor.execute("SELECT AVG(score) FROM runs")
+    row = cursor.fetchone()
+    return (row[0] if row and row[0] is not None else 0.0)
+
+
+def run_avg_today(conn=None):
+    if conn is None:
+        conn = globals()["conn"]
+    start_id = ids_info(conn)["first_today_id"]
+    cursor = conn.cursor()
+    cursor.execute("SELECT AVG(score) FROM runs WHERE id >= ?", (start_id,))
+    row = cursor.fetchone()
+    return (row[0] if row and row[0] is not None else 0.0)
+
+
+def run_max(conn=None):
+    if conn is None:
+        conn = globals()["conn"]
+    cursor = conn.cursor()
+    cursor.execute("SELECT MAX(score) FROM runs")
+    row = cursor.fetchone()
+    return (row[0] if row and row[0] is not None else 0.0)
+
+
+def run_max_today(conn=None):
+    if conn is None:
+        conn = globals()["conn"]
+    start_id = ids_info(conn)["first_today_id"]
+    cursor = conn.cursor()
+    cursor.execute("SELECT MAX(score) FROM runs WHERE id >= ?", (start_id,))
+    row = cursor.fetchone()
+    return (row[0] if row and row[0] is not None else 0.0)
+
+
+
 # NOTE: END: data_analysis.py
 
 
@@ -128,24 +196,6 @@ except:
     # windows / error occurred
     dbgf = sys.stderr
 dbg = {}
-
-DEFAULT_SETTINGS = {
-    "game_duration": 120.0,
-    "cheat_mode": False,
-    "no_log": 0,
-    "addition_bounds": [2, 100, 2, 100],
-    "multiplication_bounds": [2, 12, 2, 100],
-    "operations": ["+", "-", "*", "/"],
-    "flash_digits": 1,
-    "flash_duration": 1.0,
-    "flash_number": 10,
-    "overrides": {
-        "multiplication_a": "f_multiplication_a",
-        "multiplication_b": "f_multiplication_b",
-    },
-    "save_settings_state": True,
-}
-
 
 @dataclass
 class Settings:
@@ -159,12 +209,6 @@ class Settings:
     flash_digits: int = 1
     flash_duration: float = 1.0
     flash_number: int = 10
-    overrides: dict[str, str] = field(
-        default_factory=lambda: {
-            "multiplication_a": "f_multiplication_a",
-            "multiplication_b": "f_multiplication_b",
-        }
-    )
     save_settings_state: bool = True
 
     def to_dict(self) -> dict[str, Any]:
@@ -232,6 +276,7 @@ class AppState:
             json.dump(data, handle, indent=2)
 
     def open_db(self) -> sqlite3.Connection:
+        global conn
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute(
@@ -255,6 +300,14 @@ class AppState:
             exec(rc)
         except Exception as e:
             dbgf.write(f"Error whilst loading pyrc.py: {e}")
+
+def preset(ps, st=None):
+    if st is None:
+        global state
+        state.settings = replace(state.settings, **ps)
+    else:
+        st.settings = replace(st.settings, **ps)
+
 
 
 
@@ -289,12 +342,12 @@ def generate_problem(settings: Settings) -> tuple[str, int]:
         return f"{a} * {b}", int(a * b)
 
     if operation == "/":
-        # To ensure integer results, we treat it as: (a * b) / b = a
+        # To ensure integer results, we treat it as: (a * b) / a = b
         # We use a as the quotient and b as the divisor
-        product = a * b
         # Avoid division by zero
-        if b == 0:
-            b = 1
+        if a == 0:
+            a = 1
+        product = a * b
         return f"{product} / {a}", int(b)
 
 
@@ -557,11 +610,12 @@ class SettingsScreen(Screen):
         width: 14;
     }
     .advanced-settings-button {
-        width: 20;
+        width: auto;
         min-width: 0;
         height: 1;
         color: #888888;
         border: none;
+        margin: 1 0 0 1;
     }
     .spacer {
         width: 1fr;
@@ -596,6 +650,9 @@ class SettingsScreen(Screen):
         height: 2;
         margin-top: 1;
         align-vertical: middle;
+    }
+    #duration-input {
+        width: 14;
     }
     """
 
@@ -658,8 +715,11 @@ class SettingsScreen(Screen):
                 yield Input(placeholder="seconds", value=str(int(self.settings.game_duration)), id="duration-input")
 
             with Horizontal(classes="more-stuff"):
-                yield Button("Advanced settings", id="advanced-settings-btn", classes="advanced-settings-button")
-                yield Button("Revert to default settings", id="revert-settings", classes="advanced-settings-button")
+                yield Button("Revert to Defaults", id="revert-settings", classes="advanced-settings-button")
+                
+                yield Input(placeholder="Load preset #", id="preset-input", classes="advanced-settings-button")
+                yield Static(classes="spacer")
+                yield Button("Advanced...", id="advanced-settings-btn", classes="advanced-settings-button")
 
             # Action Buttons
             with Horizontal(classes="button-row"):
@@ -672,6 +732,18 @@ class SettingsScreen(Screen):
 
     def on_mount(self) -> None:
         self.query_one("#cancel-btn").focus() # if the user just wants to go back to the normal menu
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "preset-input":
+            try:
+                index = int(event.value)
+                preset(presets.presets[index], self.parent_view.state)
+                self.settings = self.parent_view.state.settings
+                self.update()
+            except (ValueError, IndexError) as e:
+                dbgf.write(f"exception whilst applying preset: {e}")
+            finally:
+                event.input.value = ""
 
     def save_settings(self) -> None:
         try:
@@ -737,14 +809,12 @@ class SettingsScreen(Screen):
             ("#mul-max-a", Input): str(int(self.settings.multiplication_bounds[1])),
             ("#mul-min-b", Input): str(int(self.settings.multiplication_bounds[2])),
             ("#mul-max-b", Input): str(int(self.settings.multiplication_bounds[3])),
-            ("#no-log-input", Input): str(self.settings.no_log),
-            ("#flash-digits-input", Input): str(self.settings.flash_digits),
-            ("#flash-duration-input", Input): str(self.settings.flash_duration),
-            ("#flash-number-input", Input): str(self.settings.flash_number),
-            ("#multiplication-a-override-input", Input): self.settings.overrides.get("multiplication_a", ""),
-            ("#multiplication-b-override-input", Input): self.settings.overrides.get("multiplication_b", ""),
-            ("#save-settings-state-check", Checkbox): self.settings.save_settings_state,
-            ("#cheat-mode-check", Checkbox): self.settings.cheat_mode,
+            # ("#no-log-input", Input): str(self.settings.no_log),
+            # ("#flash-digits-input", Input): str(self.settings.flash_digits),
+            # ("#flash-duration-input", Input): str(self.settings.flash_duration),
+            # ("#flash-number-input", Input): str(self.settings.flash_number),
+            # ("#save-settings-state-check", Checkbox): self.settings.save_settings_state,
+            # ("#cheat-mode-check", Checkbox): self.settings.cheat_mode,
         }
         for query, value in operations.items():
             try:
@@ -841,15 +911,6 @@ class AdvancedSettingsScreen(Screen):
                     yield Input(value=str(self.settings.flash_number), id="flash-number-input")
 
             with Container(classes="advanced-section"):
-                yield Label("Problem overrides")
-                with Horizontal(classes="advanced-row"):
-                    yield Label("Multiplication first factor:")
-                    yield Input(value=self.settings.overrides.get("multiplication_a", ""), id="multiplication-a-override-input")
-                with Horizontal(classes="advanced-row"):
-                    yield Label("Multiplication second factor:")
-                    yield Input(value=self.settings.overrides.get("multiplication_b", ""), id="multiplication-b-override-input")
-
-            with Container(classes="advanced-section"):
                 with Horizontal(classes="advanced-row"):
                     yield Checkbox(value=self.settings.save_settings_state, id="save-settings-state-check")
                     yield Label("Save settings state")
@@ -881,10 +942,6 @@ class AdvancedSettingsScreen(Screen):
             self.settings.flash_number = int(self.query_one("#flash-number-input", Input).value)
         except ValueError:
             self.settings.flash_number = 10
-        self.settings.overrides = {
-            "multiplication_a": self.query_one("#multiplication-a-override-input", Input).value,
-            "multiplication_b": self.query_one("#multiplication-b-override-input", Input).value,
-        }
         self.settings.save_settings_state = self.query_one("#save-settings-state-check", Checkbox).value
         self.parent_view.settings = self.settings
         self.parent_view.state.settings = self.settings
@@ -1052,12 +1109,21 @@ class PlayScreen(Screen):
         if not self.round_running:
             return
         self.round_running = False
+        s = self.parent_view.settings
         if self._tick_timer is not None:
             self._tick_timer.stop()
             self._tick_timer = None
-        if self.should_log and self.parent_view.settings.no_log != 2 and not quit_requested:
+        if self.should_log and not s.no_log and not quit_requested and s.cheat_mode == False:
             record_run(self.parent_view.state.conn, "runs", self.score, self.round_logs)
-        header = "Time's up!" if not self.is_replay else "Finished replay!" if not quit_requested else "Run quit!" if not self.is_replay else "Replay quit!"
+            if self.parent_view.settings.no_log == 2:
+                self.parent_view.settings.no_log = 0
+        val = self.is_replay | (2 * quit_requested)
+        header = [
+            "Time's up!",
+            "Finished replay!",
+            "Run quit!",
+            "Replay quit!",
+        ][val]
         # generate analytics using _analytics function from data_analysis.py
         summary = _analytics_summary_(json.dumps(self.round_logs))
         self.parent_view.query_one("#detail", Label).update(f"{header}\n\n" + (f"Time taken: {self.elapsed:.2f}s" if self.is_replay else f"Score: {self.score}") + f"\nSummary:\n{summary}")
@@ -1072,7 +1138,7 @@ class PlayScreen(Screen):
             self.elapsed = max(0.0, time.monotonic() - self.start_time)
             remaining = max(0.0, self.question_deadline - time.monotonic())
             self.query_one("#time-left", Label).update(f"Seconds left: {remaining:.0f}")
-            if remaining <= 0:
+            if remaining <= 0 and not self.is_replay:
                 self.finish_round()
 
 
@@ -1083,13 +1149,25 @@ class ReplaySelectionScreen(Screen):
     #pane-row { width: 100%; height: 100%; }
     #run-pane { width: 36%; min-width: 36; height: 100%; padding-right: 1; border-right: solid #444444; layout: vertical; }
     #summary-pane { width: 1fr; height: 100%; padding-left: 1; }
-    #run-list { height: 1fr; min-height: 0; }
+    #run-list {
+        height: 0.36fr;
+        max-height: 1fr;
+        min-height: 0;
+    }
     #run-summary { width: 100%; height: 100%; overflow: auto; border: solid #444444; padding: 1; }
     #replay-instructions { padding-bottom: 1; }
     #run-controls { padding-top: 1; align-horizontal: right; }
     Button {
-        width: 20;
         margin-right: 1;
+        height: 3;
+    }
+    .spacer {
+        width: 1fr;
+    }
+    #stats-label {
+        align-horizontal: right;
+        margin-right: 1;
+        height: auto;
     }
     """
 
@@ -1118,9 +1196,12 @@ class ReplaySelectionScreen(Screen):
                         id="run-list",
                     )
                     with Horizontal(id="run-controls"):
+                        if self.mode != "replay":
+                            yield Label(f"Average: {run_avg(self.parent_view.state.conn)}\nAverage today: {run_avg_today(self.parent_view.state.conn)}\nHighscore: {run_max(self.parent_view.state.conn)}\nHighscore today: {run_max_today(self.parent_view.state.conn)}", id="stats-label")
+                            yield Static(classes="spacer")
                         yield Button("Back", id="back-btn")
                 with Container(id="summary-pane"):
-                    yield Label("No run selected.", id="run-summary")
+                    yield Static("No run selected.", id="run-summary")
 
     def on_mount(self) -> None:
         run_list = self.query_one("#run-list", ListView)
@@ -1145,15 +1226,17 @@ class ReplaySelectionScreen(Screen):
     def _refresh_summary(self, run_id: int) -> None:
         run = get_run(self.parent_view.state.conn, run_id)
         if not run:
-            self.query_one("#run-summary", Label).update("Unable to load run details.")
+            self.query_one("#run-summary", Static).update("Unable to load run details.")
             return
         logs = run.get("logs") or {}
         try:
             summary = _analytics_summary_(json.dumps(logs))
         except Exception as exc:
             summary = f"Unable to compute analytics: {exc}"
-        self.query_one("#run-summary", Label).update(
-            f"Run ID: {run['id']}\nScore: {run['score']}\nTS: {run['ts']}\n{summary}"
+        dbgf.write(f"{rich.text.Text.from_ansi(summary)}\n")
+        nsummary = rich.text.Text.from_ansi(f"Run ID: {run['id']}\nScore: {run['score']}\nTS: {run['ts']}\n{summary}")
+        self.query_one("#run-summary", Static).update(
+            nsummary
         )
 
     def _activate_selected(self, run_id: int) -> None:
@@ -1406,6 +1489,16 @@ class FlashAnzan(Screen):
         if event.button.id == "flash-quit":
             self.quit()
 
+def _manual_wildcard_import(module_name, target_globals):
+    module = __import__(module_name)
+    
+    if hasattr(module, '__all__'):
+        attrs = module.__all__
+    else:
+        attrs = [name for name in dir(module) if not name.startswith('_')]
+        
+    for attr in attrs:
+        target_globals[attr] = getattr(module, attr)
 
 class MainView(App):
     CSS = """
@@ -1432,7 +1525,7 @@ class MainView(App):
         super().__init__()
         self.state = state
         self.settings = state.settings
-        self.menu_items = ["Settings", "Play", "Flash Anzan", "Replay", "Replay Hardest", "View Runs", "Sqlite3 shell", "Python repl", "Quit"]
+        self.menu_items = ["Settings", "Play", "Flash Anzan", "Replay", "Replay Hardest", "View Runs and Stats", "Sqlite3 shell", "Python repl", "Quit"]
         self.selected = 0
 
     def compose(self) -> ComposeResult:
@@ -1502,7 +1595,7 @@ class MainView(App):
             self.show_replay()
         elif item == "Replay Hardest":
             self.show_replay_hardest()
-        elif item == "View Runs":
+        elif item == "View Runs and Stats":
             self.show_runs()
         elif item == "Sqlite3 shell":
             self.sqlite3_shell()
@@ -1540,6 +1633,7 @@ class MainView(App):
         with self.suspend():
             try:
                 os.system("cls" if os.name == "nt" else "clear")
+                print("\x1b[1mDo NOT exit via ^C if you don't want to terminate the entire program. \x1b[0m")
                 sql_sh(self.state.conn)
             except BaseException as e:
                 dbgf.write(f"Error in sql_sh: {e}\n")
@@ -1547,6 +1641,12 @@ class MainView(App):
     def python_repl(self) -> None:
         """Menu action: drop into an interactive Python REPL exposing
         the running app's state, for calling lower functions/dev/debugging/lower-level work."""
+
+        global userfuncs, presets
+        import userfuncs
+        _manual_wildcard_import("userfuncs", globals())
+        import presets
+
         repl_locals = dict(globals(), **locals())
         repl_locals.update({
             "state": self.state,
@@ -1710,6 +1810,7 @@ def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] in {"--demo", "demo"}:
         run_demo()
         return
+    global state, app
     state = AppState()
     app = MainView(state)
     try:
@@ -1728,7 +1829,7 @@ zetamac_py_doc.apply_repl_docs(globals())
 
 if __name__ == "__main__":
     main()
-    code.interact(local=dict(globals(), **locals()))
+#    code.interact(local=dict(globals(), **locals()))
 
 
 
