@@ -38,13 +38,13 @@ Requires Python 3.10+.
 ```bash
 git clone https://github.com/yaofanfish/zetamac-py.git
 cd zetamac-py
-pip install -e .
+pip install -e .[opt]
 ```
 
 Or install directly with `pip`:
 
 ```bash
-pip install zetamac-py
+echo THIS DOESN'T WORK YET # pip install zetamac-py
 ```
 
 *(Once published to PyPI — see [Roadmap](#roadmap).)*
