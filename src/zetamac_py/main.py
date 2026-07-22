@@ -17,6 +17,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Checkbox, Input, Label, ListItem, ListView, Static
+from textual.binding import Binding
 from textual import events, on
 import textual
 
@@ -98,20 +99,22 @@ def _analytics(json_str: str, id: Any = None) -> dict:
         }
     }
 
-def _analytics_summary_(json_str, id: Any = None) -> dict:
+def _analytics_summary_(json_str, id: Any = None) -> str:
     if type(json_str) != str:
         json_str = json.dumps(json_str)
     a = _analytics(json_str, id)
     s = a["summary"]
     for i in range(len(s["fastest"])):
-        s["fastest"][i] = f"\033[32m{s['fastest'][i][0]}\033[0m: \x1b[36m{s['fastest'][i][1]}\x1b[0m"
+        s["fastest"][i] = f"\x1b[32m{s['fastest'][i][0]}\x1b[0m: \x1b[36m{s['fastest'][i][1]}\x1b[0m"
     for i in range(len(s["slowest"])):
-        s["slowest"][i] = f"\033[32m{s['slowest'][i][0]}\033[0m: \x1b[36m{s['slowest'][i][1]}\x1b[0m"
+        s["slowest"][i] = f"\x1b[32m{s['slowest'][i][0]}\x1b[0m: \x1b[36m{s['slowest'][i][1]}\x1b[0m"
     
     with console.capture() as capture:
         console.print_json(data=s)
 
     summary = capture.get()
+
+    dbgf.write(f"raw summary: {summary}\n")
 
     summary = summary.replace(r"\u001b", "\u001b")
     
@@ -342,7 +345,7 @@ def preset(ps, st=None):
 
 
 def generate_problem(settings: Settings) -> tuple[str, int]:
-    operations = settings.operations or ["+", "-", "*", "/"]
+    operations = settings.operations or ["+", "-", "*", "/"] # prevent nothing being selected from crashing
     operation = random.choice(operations)
 
     if operation in ["*", "/"]:
@@ -599,6 +602,15 @@ def open_file(tempfname):
         pass
 
 class SettingsScreen(Screen):
+
+    BINDINGS = [
+         ("ctrl+s", "save", "Save"),
+         ("ctrl+enter", "save_and_play", "Save and play"),
+         ("ctrl+d", "defaults", "Defaults"),
+         ("p", "focus_presets", "Focus onto presets input"),
+         ("escape", "cancel", "Cancel"),
+    ]
+
     CSS = """
     SettingsScreen {
         padding: 1;
@@ -781,6 +793,7 @@ class SettingsScreen(Screen):
 
     def on_mount(self) -> None:
         self.query_one("#cancel-btn").focus() # if the user just wants to go back to the normal menu
+        self.nopop = 0
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "preset-input":
@@ -828,7 +841,12 @@ class SettingsScreen(Screen):
         self.parent_view.state.save_settings()
         self.parent_view.update_status()
         self.parent_view.clear_annotations()
-        self.app.pop_screen()
+
+
+        if not self.nopop:
+            self.app.pop_screen()
+
+        self.nopop = 0
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save-btn":
@@ -875,6 +893,24 @@ class SettingsScreen(Screen):
             except Exception as e:
                 dbgf.write(f"exception whilst reverting to default settings: {e}")
         # save_settings_state doesn't mean what you think, it means saving it to disk, and it doesn't mean letting the user change the settings!
+
+    def action_save(self) -> None:
+        self.nopop = 1
+        self.query_one("#save-btn").press()
+
+    def action_save_and_play(self) -> None:
+        self.query_one("#save-play-btn").press()
+
+    def action_defaults(self) -> None:
+        self.query_one("#revert-settings").press()
+
+    def action_focus_presets(self) -> None:
+        self.query_one("#preset-input").focus()
+
+    def action_cancel(self) -> None:
+        self.app.pop_screen()
+
+
 
 class PlayScreen(Screen):
     CSS = """
@@ -1029,7 +1065,7 @@ class PlayScreen(Screen):
         is_satisfied = all(
             getattr(s, key) == expected_value 
             for key, expected_value in _DEFAULT_RUN.items()
-        )
+        ) # some fields don't matter, which don't feature in _DEFAULT_RUN
         pb = 0
         if not s.no_log and not quit_requested and s.cheat_mode == False and is_satisfied:
             logged = 1

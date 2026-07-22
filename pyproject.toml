@@ -1,22 +1,24 @@
 [project]
 name = "zetamac-py"
-version = "0.1.0"
-description = "A terminal-based zetamac-style arithmetic practice game"
+version = "0.1.2"
+description = "TUI zetamac clone (identical core interface) plus SQLite tracking, replay, and flash anzan (also mental arithmetic)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "GPL-3.0-or-later" }
 authors = [
     { name = "yaofanfish" }
 ]
-keywords = ["zetamac", "arithmetic", "tui", "textual", "game"]
+keywords = ["zetamac", "arithmetic", "tui", "textual", "game", "quant", "math"]
 classifiers = [
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Games/Entertainment",
     "Topic :: Education",
 ]

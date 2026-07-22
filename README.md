@@ -1,6 +1,6 @@
 # zetamac-py
 
-A terminal clone of [Zetamac](https://arithmetic.zetamac.com/), the timed mental-math arithmetic trainer, built with [Textual](https://github.com/Textualize/textual).
+TUI zetamac clone (identical core interface) plus SQLite tracking, replay, and flash anzan (also mental arithmetic), built with [Textual](https://github.com/Textualize/textual).
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Textual](https://img.shields.io/badge/built%20with-Textual-magenta)
@@ -8,9 +8,10 @@ A terminal clone of [Zetamac](https://arithmetic.zetamac.com/), the timed mental
 
 ## Screenshots
 
-![Settings](./assets/63dd43f7-3f04-4e29-a218-b13fdf09415e.png)
-![Play](./assets/16c844ea-70ce-4e1a-9d76-011f095fc959.png)
-![View runs](./assets/c63567db-c70a-4e45-a05c-efcdf6736680.png)
+<!-- https://raw.githubusercontent.com/yaofanfish/zetamac-py/refs/heads/main -->
+![Settings](https://raw.githubusercontent.com/yaofanfish/zetamac-py/refs/heads/main/assets/63dd43f7-3f04-4e29-a218-b13fdf09415e.png)
+![Play](https://raw.githubusercontent.com/yaofanfish/zetamac-py/refs/heads/main/assets/16c844ea-70ce-4e1a-9d76-011f095fc959.png)
+![View runs](https://raw.githubusercontent.com/yaofanfish/zetamac-py/refs/heads/main/assets/c63567db-c70a-4e45-a05c-efcdf6736680.png)
 
 ## Features
 
