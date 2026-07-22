@@ -30,12 +30,27 @@ TUI zetamac clone (identical core interface) plus SQLite tracking, replay, and f
 
 Requires Python 3.10+.
 
+### Install from PyPI (recommended) - pipx
+
+```bash
+pipx install "zetamac-py[opt]"
+```
+
+### Using pip
+
+```bash
+pip install "zetamac-py[opt]"
+```
+
+---
+
+### Install from github
+
 ```bash
 git clone https://github.com/yaofanfish/zetamac-py.git
 cd zetamac-py
-pipx install -e .[opt]
+pipx install -e ".[opt]"
 ```
-(or use pip, if you have all your venvs set up correctly)
 
 ## Usage
 

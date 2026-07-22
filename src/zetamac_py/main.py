@@ -1786,7 +1786,7 @@ def main() -> None:
         import miniaudio
         import pyfiglet
     except:
-        print("\x1b[31mYou have not installed the [opt] dependencies for this project, which means that some features may not work as well for you. If you change you mind, run\n\tpip install -e .[opt] # do [dev,opt] if you want the dev stuff too")
+        print("\x1b[31mYou have not installed the [opt] dependencies for this project, which means that some features may not work as well for you. If you change you mind, run\n\tpipx install -e zetamac-py[opt] # do [dev,opt] if you want the dev stuff too")
 
 
 zetamac_py_doc.apply_repl_docs(globals())
