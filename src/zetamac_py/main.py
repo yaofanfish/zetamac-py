@@ -36,7 +36,7 @@ console = rich.console.Console()
 
 import zetamac_py_doc
 import presets
-from presets import DEFAULT_SETTINGS
+from presets import DEFAULT_SETTINGS, _DEFAULT_RUN
 
 
 
@@ -101,7 +101,7 @@ def _analytics(json_str: str, id: Any = None) -> dict:
 
 def _analytics_summary_(json_str, id: Any = None) -> dict:
     if type(json_str) != str:
-        json_str = str(json_str)
+        json_str = json.dumps(json_str)
     a = _analytics(json_str, id)
     s = a["summary"]
     for i in range(len(s["fastest"])):
@@ -118,34 +118,32 @@ def _analytics_summary_(json_str, id: Any = None) -> dict:
     
     return summary
 
+
 def ids_info(conn=None):
     if conn is None:
         conn = globals()["conn"]
-    ret = {}
 
-    today_prefix = datetime.datetime.now().strftime("%Y%m%d")
+    today = datetime.date.today().isoformat()
+    tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
 
-    cursor = conn.cursor()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT
+            MIN(CASE WHEN ts >= ? AND ts < ? THEN id END),
+            MAX(id)
+        FROM runs
+        """,
+        (today, tomorrow),
+    )
 
-    cursor.execute("SELECT id, ts FROM runs ORDER BY id ASC")
-    for row in cursor:
-        run_id, ts = row
-        if ts:
-            run_date = str(ts)[:8]
-            if run_date == today_prefix:
-                ret["first_today_id"] = run_id
-                break
+    first_today_id, highest_id = cur.fetchone()
+    highest_id = highest_id or 0
 
-    cursor.execute("SELECT MAX(id) AS max_id FROM runs")
-    row = cursor.fetchone()
-    if row and row[0] is not None:
-        ret["first_today_id"] = ret.get("first_today_id", row[0] + 1)
-        ret["highest_id"] = row[0]
-
-    ret["first_today_id"] = ret.get("first_today_id", 1)
-    ret["highest_id"] = ret.get("highest_id", 0)
-
-    return ret
+    return {
+        "first_today_id": first_today_id if first_today_id is not None else highest_id + 1,
+        "highest_id": highest_id,
+    }
 
 
 def run_avg(conn=None):
@@ -173,7 +171,7 @@ def run_max(conn=None):
     cursor = conn.cursor()
     cursor.execute("SELECT MAX(score) FROM runs")
     row = cursor.fetchone()
-    return (row[0] if row and row[0] is not None else 0.0)
+    return (row[0] if row and row[0] is not None else 0)
 
 
 def run_max_today(conn=None):
@@ -183,12 +181,24 @@ def run_max_today(conn=None):
     cursor = conn.cursor()
     cursor.execute("SELECT MAX(score) FROM runs WHERE id >= ?", (start_id,))
     row = cursor.fetchone()
-    return (row[0] if row and row[0] is not None else 0.0)
+    return (row[0] if row and row[0] is not None else 0)
 
 
 
 # NOTE: END: data_analysis.py
 
+
+
+
+HOME = (Path.home() / "Appdata" / "Local" / "zetamac-py" if os.name == "nt" else Path.home()).resolve()
+
+CONFIGDIR = HOME / ".config" / "zetamac-py"
+
+LOCALSHAREDIR = HOME / ".local" / "share" / "zetamac-py"
+
+LOCALSTATEDIR = HOME / ".local" / "state" / "zetamac-py"
+
+SETTINGSFILE = LOCALSTATEDIR / "settings.json"
 
 try:
     dbgf = open("/tmp/zetamac-py-debug.log", "w", encoding="utf-8", buffering=1)
@@ -214,7 +224,6 @@ class Settings:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
-HOME = (Path.home() / "Appdata" / "Local" / "zetamac-py" if os.name == "nt" else Path.home()).resolve()
 
 def sql_sh(conn=(HOME / ".local" / "share" / "zetamac-py" / "runs.db")):
     if type(conn) == sqlite3.Connection:
@@ -223,14 +232,18 @@ def sql_sh(conn=(HOME / ".local" / "share" / "zetamac-py" / "runs.db")):
         path = str(conn)
     subprocess.run(["sqlite3", path])
 
+
+
 class AppState:
     """Persistent settings and DB connection (see zetamac_py_doc.APP_STATE_DOC)."""
     def __init__(self, config_dir: Path | str | None = None, db_path: Path | str | None = None) -> None:
         self.home = HOME
-        self.config_dir = Path(config_dir) if config_dir is not None else self.home / ".config" / "zetamac-py"
+        self.config_dir = CONFIGDIR
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        self.config_path = self.config_dir / "settings.json"
-        self.db_path = Path(db_path) if db_path is not None else self.home / ".local" / "share" / "zetamac-py" / "runs.db"
+        self.localstate_dir = LOCALSTATEDIR
+        self.localstate_dir.mkdir(parents=True, exist_ok=True)
+        self.config_path = SETTINGSFILE
+        self.db_path = LOCALSHAREDIR / "runs.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.settings = self.load_settings()
         self.conn = self.open_db()
@@ -246,11 +259,11 @@ class AppState:
             try:
                 with self.config_path.open("r", encoding="utf-8") as handle:
                     raw = json.load(handle)
-                filtered = {k: v for k, v in raw.items() if k != "current_game_mode"}
+                filtered = raw
                 merged = dict(default_dict)
                 for key, value in filtered.items():
                     if key == "operations":
-                        if isinstance(value, list) and set(value).issubset({"+", "-", "*", "/"}) and len(value) == 4:
+                        if isinstance(value, list) and set(value).issubset({"+", "-", "*", "/"}):
                             merged[key] = list(value)
                         else:
                             merged[key] = list(default_dict[key])
@@ -548,6 +561,25 @@ async def beep(duration: float = 1.0) -> None:
     # no idea what ur running on
     print("\a")
         
+def open_file(tempfname):
+    try:
+        editors = [f"{os.getenv('EDITOR', 'nvim')}", "xdg-open", "open", "notepad.exe", "nvim", "vim", "nano", "vi"]
+        for editor in editors:
+            if shutil.which(editor):
+                dbgf.write("used editor " + editor + "\n")
+                subprocess.run([editor, tempfname])
+                raise Exception("found!")
+        if sys.platform == "linux":
+            subprocess.run(["vi", tempfname])
+        elif sys.platform == "darwin":
+            subprocess.run(["vim", tempfname]) # vim is installed by default
+        elif sys.platform == "win32":
+            os.startfile(tempfname)
+        subprocess.run(["nano", tempfname])
+    except:
+        pass
+    finally:
+        pass
 
 class SettingsScreen(Screen):
     CSS = """
@@ -719,7 +751,7 @@ class SettingsScreen(Screen):
                 
                 yield Input(placeholder="Load preset #", id="preset-input", classes="advanced-settings-button")
                 yield Static(classes="spacer")
-                yield Button("Advanced...", id="advanced-settings-btn", classes="advanced-settings-button")
+                yield Button("Advanced/json...", id="advanced-settings-btn", classes="advanced-settings-button")
 
             # Action Buttons
             with Horizontal(classes="button-row"):
@@ -790,7 +822,11 @@ class SettingsScreen(Screen):
             self.save_settings()
             self.parent_view.show_play()
         elif event.button.id == "advanced-settings-btn":
-            self.app.push_screen(AdvancedSettingsScreen(self.parent_view))
+            self.parent_view.state.save_settings(force=True)
+            with self.app.suspend():
+                open_file(SETTINGSFILE)
+            self.parent_view.state.settings = self.parent_view.settings = self.settings = self.parent_view.state.load_settings()
+            self.update()
         elif event.button.id == "revert-settings":
             self.settings = self.parent_view.state.default_settings()
             self.update()
@@ -822,138 +858,6 @@ class SettingsScreen(Screen):
             except Exception as e:
                 dbgf.write(f"exception whilst reverting to default settings: {e}")
         # save_settings_state doesn't mean what you think, it means saving it to disk, and it doesn't mean letting the user change the settings!
-
-class AdvancedSettingsScreen(Screen):
-    """Edit the less commonly used settings without crowding the main screen."""
-
-    CSS = """
-    AdvancedSettingsScreen {
-        padding: 1;
-        align: center top;
-    }
-    #advanced-settings-container {
-        width: 80;
-        height: auto;
-        background: #272727;
-        color: white;
-        padding: 2 4;
-    }
-    .advanced-section {
-        height: auto;
-        margin-bottom: 1;
-    }
-    .advanced-row {
-        height: 3;
-        align-vertical: middle;
-    }
-    .advanced-row Label {
-        width: 30;
-    }
-    .advanced-checkbox-row {
-        height: 2;
-        align-vertical: middle;
-    }
-    .advanced-checkbox-row Label {
-        margin-left: 1;
-    }
-    AdvancedSettingsScreen Input {
-        width: 20;
-        height: 1;
-        border: none;
-        background: #161616;
-        color: white;
-        margin-left: 1;
-    }
-    .advanced-button-row {
-        height: auto;
-        margin-top: 1;
-    }
-    .advanced-button-row Button {
-        width: 20;
-        height: 3;
-        margin-right: 1;
-    }
-    .advanced-settings-button {
-        width: 20;
-        min-width: 0;
-        height: 2;
-        margin-top: 0;
-    }
-    """
-
-    def __init__(self, parent_view: "MainView") -> None:
-        super().__init__()
-        self.parent_view = parent_view
-        self.settings = parent_view.settings
-
-    def compose(self) -> ComposeResult:
-        with Container(id="advanced-settings-container"):
-            yield Label("Advanced settings")
-
-            with Container(classes="advanced-section"):
-                with Horizontal(classes="advanced-checkbox-row"):
-                    yield Checkbox(value=self.settings.cheat_mode, id="cheat-mode-check")
-                    yield Label("Enable cheat mode")
-                with Horizontal(classes="advanced-row"):
-                    yield Label("Logging mode (0, 1, or 2):")
-                    yield Input(value=str(self.settings.no_log), id="no-log-input")
-
-            with Container(classes="advanced-section"):
-                yield Label("Flash settings")
-                with Horizontal(classes="advanced-row"):
-                    yield Label("Digits:")
-                    yield Input(value=str(self.settings.flash_digits), id="flash-digits-input")
-                with Horizontal(classes="advanced-row"):
-                    yield Label("Duration (seconds):")
-                    yield Input(value=str(self.settings.flash_duration), id="flash-duration-input")
-                with Horizontal(classes="advanced-row"):
-                    yield Label("Number of flashes:")
-                    yield Input(value=str(self.settings.flash_number), id="flash-number-input")
-
-            with Container(classes="advanced-section"):
-                with Horizontal(classes="advanced-row"):
-                    yield Checkbox(value=self.settings.save_settings_state, id="save-settings-state-check")
-                    yield Label("Save settings state")
-
-            with Horizontal(classes="advanced-button-row"):
-                yield Button("Save", id="save-advanced-btn")
-                yield Button("Back", id="back-btn")
-
-            
-
-    def save_settings(self) -> None:
-        self.settings.cheat_mode = self.query_one("#cheat-mode-check", Checkbox).value
-
-        try:
-            self.settings.no_log = int(self.query_one("#no-log-input", Input).value)
-        except ValueError:
-            self.settings.no_log = 0
-        self.settings.no_log = max(0, min(2, self.settings.no_log))
-
-        try:
-            self.settings.flash_digits = int(self.query_one("#flash-digits-input", Input).value)
-        except ValueError:
-            self.settings.flash_digits = 1
-        try:
-            self.settings.flash_duration = float(self.query_one("#flash-duration-input", Input).value)
-        except ValueError:
-            self.settings.flash_duration = 1.0
-        try:
-            self.settings.flash_number = int(self.query_one("#flash-number-input", Input).value)
-        except ValueError:
-            self.settings.flash_number = 10
-        self.settings.save_settings_state = self.query_one("#save-settings-state-check", Checkbox).value
-        self.parent_view.settings = self.settings
-        self.parent_view.state.settings = self.settings
-        self.parent_view.state.save_settings()
-        self.parent_view.update_status()
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "save-advanced-btn":
-            self.save_settings()
-            self.app.pop_screen()
-        elif event.button.id == "back-btn":
-            self.app.pop_screen()
 
 class PlayScreen(Screen):
     CSS = """
@@ -988,12 +892,13 @@ class PlayScreen(Screen):
     #answer-input { width: 24; }
     """
 
-    def __init__(self, parent_view: "MainView", problem_factory, should_log: bool = True, is_replay: bool = False) -> None:
+    def __init__(self, parent_view: "MainView", problem_factory, settings: Settings, is_replay: bool = False, replay_stats = {}) -> None:
         super().__init__()
         self.parent_view = parent_view
         self.problem_factory = problem_factory
-        self.should_log = should_log
+        self.settings = settings
         self.is_replay = is_replay
+        self.replay_stats = replay_stats
         self.current_problem: tuple[str, float] | None = None
         self.current_answer = ""
         self.score = 0
@@ -1061,6 +966,9 @@ class PlayScreen(Screen):
         input_widget.value = ""
         input_widget.focus()
 
+        if self.settings.cheat_mode:
+            input_widget.placeholder = str(problem[1])
+
     def refresh_hud(self) -> None:
         remaining = max(0.0, self.question_deadline - time.monotonic()) if self.round_running else 0.0
         self.query_one("#time-left", Label).update(f"Seconds left: {remaining:.0f}")
@@ -1113,20 +1021,43 @@ class PlayScreen(Screen):
         if self._tick_timer is not None:
             self._tick_timer.stop()
             self._tick_timer = None
-        if self.should_log and not s.no_log and not quit_requested and s.cheat_mode == False:
+        is_satisfied = all(
+            getattr(s, key) == expected_value 
+            for key, expected_value in _DEFAULT_RUN.items()
+        )
+        pb = 0
+        if not s.no_log and not quit_requested and s.cheat_mode == False and is_satisfied:
+            logged = 1
+            max_score = run_max(self.parent_view.state.conn)
             record_run(self.parent_view.state.conn, "runs", self.score, self.round_logs)
-            if self.parent_view.settings.no_log == 2:
-                self.parent_view.settings.no_log = 0
-        val = self.is_replay | (2 * quit_requested)
-        header = [
-            "Time's up!",
-            "Finished replay!",
-            "Run quit!",
-            "Replay quit!",
-        ][val]
+            dbgf.write(f"self.score = {self.score}; max_score = {max_score};\n")
+            if self.score > max_score:
+                pb = 1
+                dbgf.write(f"pb!\n")
+            else:
+                dbgf.write(f"no pb\n")
+        else:
+            logged = 0
+        if (self.parent_view.settings.no_log & 2):
+            self.parent_view.settings.no_log ^= 2
+        if pb:
+            header = f"[gold]NEW PB!!![/] (previous: {max_score})\n"
+        else:
+            val = self.is_replay | (2 * quit_requested)
+            header = [
+                "Time's up!",
+                "Finished replay!",
+                "Run quit!",
+                "Replay quit!",
+            ][val]
         # generate analytics using _analytics function from data_analysis.py
         summary = _analytics_summary_(json.dumps(self.round_logs))
-        self.parent_view.query_one("#detail", Label).update(f"{header}\n\n" + (f"Time taken: {self.elapsed:.2f}s" if self.is_replay else f"Score: {self.score}") + f"\nSummary:\n{summary}")
+        if self.is_replay:
+            special_bit = f"You would have scored {(self.score * self.replay_stats['time_taken'] / self.elapsed):.2f} with the normal time. " if self.replay_stats["type"] == "replay" else f"Originally, you took {'around ' if quit_requested else ''}{(self.replay_stats['time_taken'] * self.score / self.replay_stats['question_number']):.2f} seconds. "
+            detail = f"{header}\n\nTime taken: {self.elapsed:.2f}s\n" + special_bit + f"\nSummary:\n{summary}"
+        else:
+            detail = f"{header}\n{'Logged run!' if logged else 'On this pace, you would have scored ~' + str(round(self.score * 120 / self.elapsed, 2)) + ' if you had finished the run. ' if quit_requested else ''}\nScore: {self.score}\nSummary:\n{summary}"
+        self.parent_view.query_one("#detail", Label).update(detail)
         self.app.pop_screen()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -1254,24 +1185,8 @@ class ReplaySelectionScreen(Screen):
                 tempf = tempfile.NamedTemporaryFile(prefix="zetamac-py_", suffix=".json")
                 tempf.write(json.dumps(run, indent="\t").encode("utf-8"))
                 tempf.flush()
-                try:
-                    editors = ["nvim", "vim", "nano", "vi", "notepad.exe", "xdg-open", "open"]
-                    for editor in editors:
-                        if shutil.which(editor):
-                            dbgf.write("used editor " + editor + "\n")
-                            subprocess.run([editor, tempf.name])
-                            raise Exception("found!")
-                    if sys.platform == "linux":
-                        subprocess.run(["vi", tempf.name])
-                    elif sys.platform == "darwin":
-                        subprocess.run(["vim", tempf.name]) # vim is installed by default
-                    elif sys.platform == "win32":
-                        os.startfile(tempf.name)
-                    subprocess.run(["nano", tempf.name])
-                except:
-                    pass
-                finally:
-                    tempf.close()
+                open_file(tempf.name)
+                tempf.close()
         except Exception as e:
             self.query_one("#run-summary", Label).update(
                 f"Error whilst opening json: {e}"
@@ -1605,7 +1520,7 @@ class MainView(App):
             self.exit()
 
     def show_play(self) -> None:
-        self.push_screen(PlayScreen(self, problem_factory=lambda: generate_problem(self.settings), should_log=True))
+        self.push_screen(PlayScreen(self, problem_factory=lambda: generate_problem(self.settings), settings=self.settings))
 
     def show_settings(self) -> None:
         self.push_screen(SettingsScreen(self))
@@ -1676,12 +1591,14 @@ class MainView(App):
                 "should_log": False,
                 "stuff": run.get("logs"), # run is a dict with keys: id, ts, score, logs
         }
+        self.settings.no_log += 2
         self.push_screen(
             PlayScreen(
                 self,
                 problem_factory=ReplayProblemFactory(run.get("logs") or {}),
-                should_log=False,
+                settings=self.settings,
                 is_replay=True,
+                replay_stats={"time_taken": 120, "type": "replay", "question_number": len(run["logs"])},
             )
         )
 
@@ -1691,17 +1608,19 @@ class MainView(App):
             self.query_one("#detail", Label).update("No runs available yet.")
             return
 
-        replay_logs = build_hardest_replay_logs(runs)
+        replay_logs, time_taken = build_hardest_replay_logs(runs)
         if not replay_logs:
             self.query_one("#detail", Label).update("No replayable questions available yet.")
             return
 
+        self.settings.no_log += 2
         self.push_screen(
             PlayScreen(
                 self,
                 problem_factory=ReplayProblemFactory(replay_logs),
-                should_log=False,
+                settings=self.settings,
                 is_replay=True,
+                replay_stats={"time_taken": time_taken, "type": "replay_hardest", "question_number": len(replay_logs)},
             )
         )
 
@@ -1759,7 +1678,7 @@ def _parse_logged_problem(raw: str) -> tuple[str, float] | None:
     return expression, answer
 
 
-def build_hardest_replay_logs(runs: list[dict[str, Any]]) -> dict[str, str]:
+def build_hardest_replay_logs(runs):
     replay_logs: dict[str, str] = {}
     cumulative_time = 0.0
 
@@ -1770,12 +1689,12 @@ def build_hardest_replay_logs(runs: list[dict[str, Any]]) -> dict[str, str]:
 
         analytics = _analytics(json.dumps(logs))
         slowest_questions = analytics["summary"]["slowest"][:3]
+
         for expression, time_used in slowest_questions:
             cumulative_time += float(time_used)
             replay_logs[str(round(cumulative_time, 3))] = expression
 
-    return replay_logs
-
+    return replay_logs, cumulative_time
 
 def _load_userfuncs() -> dict[str, Any]:
     """Load optional REPL helper functions from __pycache__/userfuncs.py."""

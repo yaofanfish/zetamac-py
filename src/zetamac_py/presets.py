@@ -21,6 +21,13 @@ DEFAULT_SETTINGS = {
 The default settings. 
 """
 
+_DEFAULT_RUN = {
+    "game_duration": 120.0,
+	"addition_bounds": [2, 100, 2, 100],
+	"multiplication_bounds": [2, 12, 2, 100],
+	"operations": ["+", "-", "*", "/"],
+}
+
 pre0 = DEFAULT_SETTINGS # quick alias
 
 pre1 = {
@@ -42,6 +49,11 @@ Often steals time from your run
 """
 
 pre3 = {
+    "multiplication_bounds": [99, 99, 2, 12],
+    "operations": ['*', '/'],
+}
+
+pre4 = {
 	"multiplication_bounds": [1, 12, 1, 12],
 	"operations": ["*", "/"]
 }
@@ -53,7 +65,8 @@ do you have the brain inferior to that of a 5 year old? then this is for you
 presets_dict = {
 	"13-20 times tables": pre1,
 	"division by 12": pre2,
-	"times tables": pre3,
+    "multiplication and division by 99": pre3,
+	"times tables": pre4,
 }
 """
 dict of the presets - with explanations, not for practical use
@@ -64,6 +77,7 @@ presets = [
 	pre0,
 	pre1,
 	pre2,
-	pre3
+	pre3,
+    pre4,
 ]
 
