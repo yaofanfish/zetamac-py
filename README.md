@@ -32,8 +32,9 @@ Requires Python 3.10+.
 ```bash
 git clone https://github.com/yaofanfish/zetamac-py.git
 cd zetamac-py
-pip install -e .[opt]
+pipx install -e .[opt]
 ```
+(or use pip, if you have all your venvs set up correctly)
 
 ## Usage
 

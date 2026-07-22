@@ -247,7 +247,7 @@ Needs some weird signal workarounds due to a race condition
 
 class AppState:
     """Persistent settings and DB connection (see zetamac_py_doc.APP_STATE_DOC)."""
-    def __init__(self, config_dir: Path | str | None = None, db_path: Path | str | None = None) -> None:
+    def __init__(self) -> None:
         self.home = HOME
         self.config_dir = CONFIGDIR
         self.config_dir.mkdir(parents=True, exist_ok=True)
@@ -263,14 +263,15 @@ class AppState:
         defaults = Settings(**DEFAULT_SETTINGS)
         return defaults
 
-    def load_settings(self) -> Settings:
+    def load_settings(self, fallback="default") -> Settings:
         defaults = self.default_settings()
         default_dict = defaults.to_dict()
         if self.config_path.exists():
             try:
                 with self.config_path.open("r", encoding="utf-8") as handle:
                     raw = json.load(handle)
-                filtered = raw
+                allowed = set(Settings.__dataclass_fields__.keys())
+                filtered = {k: v for k, v in raw.items() if k in allowed}
                 merged = dict(default_dict)
                 for key, value in filtered.items():
                     if key == "operations":
@@ -287,7 +288,12 @@ class AppState:
                         merged[key] = value
                 return Settings(**merged)
             except Exception:
-                return defaults
+                if fallback == "default":
+                    return defaults
+                elif fallback == "self.settings":
+                    return self.settings
+                else:
+                    return fallback
         return defaults
 
     def save_settings(self, force=False) -> None:
@@ -836,7 +842,7 @@ class SettingsScreen(Screen):
             self.parent_view.state.save_settings(force=True)
             with self.app.suspend():
                 open_file(SETTINGSFILE)
-            self.parent_view.state.settings = self.parent_view.settings = self.settings = self.parent_view.state.load_settings()
+            self.parent_view.state.settings = self.parent_view.settings = self.settings = self.parent_view.state.load_settings("self.settings")
             self.update()
         elif event.button.id == "revert-settings":
             self.settings = self.parent_view.state.default_settings()
@@ -911,7 +917,6 @@ class PlayScreen(Screen):
         self.is_replay = is_replay
         self.replay_stats = replay_stats
         self.current_problem: tuple[str, float] | None = None
-        self.current_answer = ""
         self.score = 0
         self.elapsed = 0.0
         self.start_time = 0.0
@@ -923,7 +928,7 @@ class PlayScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Container(
             Container(
-                Label("Seconds left: --", id="time-left"),
+                Label("Seconds used: --" if self.is_replay else "Seconds left: --", id="time-left"),
                 Label("Score: 0", id="score-right"),
                 id="hud",
             ),
@@ -951,7 +956,6 @@ class PlayScreen(Screen):
         self.round_logs = {}
         self.round_running = True
         self._tick_timer = self.set_interval(0.1, self.tick)
-        self.refresh_hud()
         self.next_question()
 
     def next_question(self) -> None:
@@ -965,7 +969,6 @@ class PlayScreen(Screen):
             self.finish_round()
             return
         self.current_problem = problem
-        self.current_answer = ""
         problem_text = self.current_problem[0]
         # answers may be of different length
         # exceptionally, there may be a 100+100, which is (100 + 100), which is 9 len
@@ -980,10 +983,6 @@ class PlayScreen(Screen):
         if self.settings.cheat_mode:
             input_widget.placeholder = str(problem[1])
 
-    def refresh_hud(self) -> None:
-        remaining = max(0.0, self.question_deadline - time.monotonic()) if self.round_running else 0.0
-        self.query_one("#time-left", Label).update(f"Seconds left: {remaining:.0f}")
-        self.query_one("#score-right", Label).update(f"Score: {self.score}")
 
     def on_input_changed(self, event: Input.Changed) -> None:
         # we won't change the problem label to update with the user answer; previously it was done with
@@ -992,26 +991,21 @@ class PlayScreen(Screen):
         if event.input.id != "answer-input":
             return
         candidate = event.value.strip()
-        self.current_answer = candidate
         self.elapsed = time.monotonic() - self.start_time
         if not candidate:
-            self.refresh_hud()
             return
         try:
             value = float(candidate)
         except ValueError:
-            #self.query_one("#problem-label", Label).update(f"{self.current_problem[0]} = {candidate}")
-            self.refresh_hud()
             return
         answer = self.current_problem[1]
         if math.isfinite(value) and abs(value - answer) < 1e-9:
             self.score += 1
             self.round_logs[str(round(self.elapsed, 3))] = self.current_problem[0]
+            self.query_one("#score-right", Label).update(f"Score: {self.score}")
             self.next_question()
         else:
-            #self.query_one("#problem-label", Label).update(f"{self.current_problem[0]} = {candidate}")
             pass
-        self.refresh_hud()
 
     def key_q(self) -> None:
         self.quit_run()
@@ -1064,7 +1058,7 @@ class PlayScreen(Screen):
         # generate analytics using _analytics function from data_analysis.py
         summary = _analytics_summary_(json.dumps(self.round_logs))
         if self.is_replay:
-            special_bit = f"You would have scored {(self.score * self.replay_stats['time_taken'] / self.elapsed):.2f} with the normal time. " if self.replay_stats["type"] == "replay" else f"Originally, you took {'around ' if quit_requested else ''}{(self.replay_stats['time_taken'] * self.score / self.replay_stats['question_number']):.2f} seconds. "
+            special_bit = f"You would have scored {(self.score * self.replay_stats['time_taken'] / (self.elapsed or 0.01)):.2f} with the normal time. " if self.replay_stats["type"] == "replay" else f"Originally, you took {'around ' if quit_requested else ''}{(self.replay_stats['time_taken'] * self.score / self.replay_stats['question_number']):.2f} seconds. "
             detail = f"{header}\n\nTime taken: {self.elapsed:.2f}s\n" + special_bit + f"\nSummary:\n{summary}"
         else:
             detail = f"{header}\n{'Logged run!' if logged else 'On this pace, you would have scored ~' + str(round(self.score * 120 / self.elapsed, 2)) + ' if you had finished the run. ' if quit_requested else ''}\nScore: {self.score}\nSummary:\n{summary}"
@@ -1078,10 +1072,14 @@ class PlayScreen(Screen):
     def tick(self) -> None:
         if self.round_running:
             self.elapsed = max(0.0, time.monotonic() - self.start_time)
-            remaining = max(0.0, self.question_deadline - time.monotonic())
-            self.query_one("#time-left", Label).update(f"Seconds left: {remaining:.0f}")
-            if remaining <= 0 and not self.is_replay:
-                self.finish_round()
+            if self.is_replay:
+                pass
+                self.query_one("#time-left", Label).update(f"Seconds used: {self.elapsed:.0f}")
+            else:
+                remaining = max(0.0, self.question_deadline - time.monotonic())
+                self.query_one("#time-left", Label).update(f"Seconds left: {remaining:.0f}")
+                if remaining <= 0 and not self.is_replay:
+                    self.finish_round()
 
 
 class ReplaySelectionScreen(Screen):
@@ -1451,7 +1449,7 @@ class MainView(App):
         super().__init__()
         self.state = state
         self.settings = state.settings
-        self.menu_items = ["Settings", "Play", "Flash Anzan", "Replay", "Replay Hardest", "View Runs and Stats", "Sqlite3 shell", "Python repl", "Quit"]
+        self.menu_items = ["Settings", "Play", "Flash Anzan", "Replay", "Replay Hardest", "View Runs and Stats", "SQLite3 shell", "Python repl", "Quit"]
         self.selected = 0
 
     def compose(self) -> ComposeResult:
@@ -1523,7 +1521,7 @@ class MainView(App):
             self.show_replay_hardest()
         elif item == "View Runs and Stats":
             self.show_runs()
-        elif item == "Sqlite3 shell":
+        elif item == "SQLite3 shell":
             self.sqlite3_shell()
         elif item == "Python repl":
             self.python_repl()
