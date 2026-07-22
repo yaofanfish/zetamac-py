@@ -26,7 +26,7 @@ TUI zetamac clone (identical core interface) plus SQLite tracking, replay, and f
 
 * Written in python, so can descend into a python or sqlite shell for directly interacting with the state. For dev, and can be normally used with helper functions defined. 
 
-## Installation
+## Installation / Quick Start
 
 Requires Python 3.10+.
 
