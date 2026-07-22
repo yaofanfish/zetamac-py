@@ -26,7 +26,7 @@ import runpy
 
 import rich, rich.console, rich.text
 
-import asyncio
+import asyncio, signal
 
 import tempfile, shutil
 
@@ -37,7 +37,6 @@ console = rich.console.Console()
 import zetamac_py_doc
 import presets
 from presets import DEFAULT_SETTINGS, _DEFAULT_RUN
-
 
 
 # NOTE: data_anlysis.py
@@ -227,11 +226,23 @@ class Settings:
 
 def sql_sh(conn=(HOME / ".local" / "share" / "zetamac-py" / "runs.db")):
     if type(conn) == sqlite3.Connection:
-        path = conn.execute("SELECT file FROM pragma_database_list WHERE name = 'main';").fetchone()[0]
+        path = conn.execute(
+            "SELECT file FROM pragma_database_list WHERE name = 'main';"
+        ).fetchone()[0]
     else:
         path = str(conn)
-    subprocess.run(["sqlite3", path])
 
+    old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        subprocess.run(["sqlite3", path])
+    except Exception:
+        pass
+    finally:
+        signal.signal(signal.SIGINT, old_handler)
+"""
+Enter the cli SQL shell
+Needs some weird signal workarounds due to a race condition
+"""
 
 
 class AppState:
@@ -1548,7 +1559,7 @@ class MainView(App):
         with self.suspend():
             try:
                 os.system("cls" if os.name == "nt" else "clear")
-                print("\x1b[1mDo NOT exit via ^C if you don't want to terminate the entire program. \x1b[0m")
+#                print("\x1b[1mDo NOT exit via ^C if you don't want to terminate the entire program. \x1b[0m") # fixed now
                 sql_sh(self.state.conn)
             except BaseException as e:
                 dbgf.write(f"Error in sql_sh: {e}\n")
